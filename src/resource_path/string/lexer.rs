@@ -8,19 +8,20 @@ use crate::resource_path::string::{IResult, LocatedSpan};
 use crate::resource_path::string::token::{Token, TokenValue};
 
 #[derive(Clone, Debug)]
-pub struct LexerError<'a>(LocatedSpan<'a>);
+pub struct LexerError<'a>(LocatedSpan<'a>, String);
 
-fn expect<'a, F, E, T>(parser: F, err_msg: E) -> impl Fn(LocatedSpan<'a>) -> IResult<Option<T>>
+fn expect<'a, F, E, T>(mut parser: F, err_msg: E) -> impl FnMut(LocatedSpan<'a>) -> IResult<Option<T>>
 where
-    F: Fn(LocatedSpan<'a>) -> IResult<T>,
+    F: FnMut(LocatedSpan<'a>) -> IResult<T>,
     E: ToString
 {
     use nom::error::Error as NomError;
     move |input| match parser(input) {
         Ok((remaining, output)) => Ok((remaining, Some(output))),
         Err(nom::Err::Error(NomError { input, code: _ })) | Err(nom::Err::Failure(NomError { input, code: _ })) => {
-            let err = LexerError(input);
+            let err = LexerError(input, err_msg.to_string());
             // TODO Report error.
+            println!("error: {:?}", err);
             Ok((input, None))
         }
         Err(err) => Err(err),
@@ -43,8 +44,8 @@ fn whitespace(input: LocatedSpan) -> IResult<Token> {
     })(input)
 }
 
-fn expr(input: LocatedSpan) -> IResult<Vec<Token>> {
-    many1(alt((ident, whitespace)))(input)
+fn expr(input: LocatedSpan) -> IResult<Option<Vec<Token>>> {
+    expect(terminated(many1(alt((ident, whitespace))), eof), "expected end-of-file")(input)
 }
 
 
