@@ -37,7 +37,7 @@ fn ident(input: LocatedSpan) -> IResult<Token> {
     let ident = recognize(preceded(first, rest));
     map(ident, |span: LocatedSpan| {
         let fragment = span.fragment().to_string();
-        Token::new(TokenValue::Ident(fragment))
+        Token::new(span, TokenValue::Ident(fragment))
     })(input)
 }
 
@@ -130,22 +130,20 @@ fn lit_str(input: LocatedSpan) -> IResult<Token> {
     )(input.clone())?;
     let span_offset = input.offset(&remainder);
     let span = input.take(span_offset);
-    Ok((remainder, Token::new(TokenValue::LitStr(s))))
+    Ok((remainder, Token::new(span, TokenValue::LitStr(s))))
 }
 
 
 fn whitespace(input: LocatedSpan) -> IResult<Token> {
     let ws = take_while1(|c: char| c.is_ascii_whitespace());
-    map(ws, |span: LocatedSpan| {
-        Token::new(TokenValue::Whitespace)
-    })(input)
+    map(ws, |span: LocatedSpan| Token::new(span, TokenValue::Whitespace))(input)
 }
 
 
 macro_rules! tag_token {
     ($name:ident, $repr:literal, $token_value:expr) => {
         fn $name(input: LocatedSpan) -> IResult<Token> {
-            map(tag($repr), |span: LocatedSpan| Token::new($token_value))(input)
+            map(tag($repr), |span: LocatedSpan| Token::new(span, $token_value))(input)
         }
     };
 }
@@ -179,11 +177,10 @@ fn expr(input: LocatedSpan) -> IResult<Vec<Token>> {
     Ok((remainder, token_list.unwrap_or_else(|| Vec::new())))
 }
 
-fn tokenize(raw: &str) -> (Vec<Token>, Vec<LexerError>) {
-    let errors = RefCell::new(Vec::new());
-    let input = LocatedSpan::new_extra(raw, LexerState(&errors));
-    let (_, tokens) = expr(input).expect("parser cannot fail");
-    (tokens, errors.into_inner())
+fn tokenize<'a>(raw: &'a str) -> (Vec<Token>, Vec<LexerError>) {
+    let input = LocatedSpan::<'a>::new_extra(raw, LexerState::new());
+    let (remainder, tokens) = expr(input).expect("parser cannot fail");
+    (tokens, remainder.extra.0.into_inner())
 }
 
 
