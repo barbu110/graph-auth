@@ -1,6 +1,8 @@
+#![allow(dead_code)]
+
 pub mod lexer;
+pub mod lexer_utils;
 pub mod token;
 pub(crate) mod chars;
 
-pub type LocatedSpan<'a> = nom_locate::LocatedSpan<&'a str>;
-pub type IResult<'a, T> = nom::IResult<LocatedSpan<'a>, T>;
+mod range_ex;

@@ -1,18 +1,20 @@
 use std::iter::Enumerate;
 use std::ops::{Index, Range, RangeFrom, RangeFull, RangeTo};
+use std::slice::Iter;
+
 use nom::{InputIter, InputLength, InputTake, Needed, Slice};
 use serde_json::Number;
-use crate::resource_path::string::LocatedSpan;
-use std::slice::Iter;
+
+use crate::resource_path::string::lexer_utils::LocatedSpan;
 
 #[derive(Clone, Debug)]
 pub struct Token<'a> {
     pub span: LocatedSpan<'a>,
-    pub value: TokenValue<'a>,
+    pub value: TokenValue,
 }
 
 #[derive(Clone, Debug)]
-pub enum TokenValue<'a> {
+pub enum TokenValue {
     Whitespace,
     Scope,
     Wildcard,
@@ -22,18 +24,15 @@ pub enum TokenValue<'a> {
     RParen,
     Colon,
     Comma,
-    Underscore,
-    DoubleQuote,
     LitFalse,
     LitTrue,
     LitNum(Number),
-    LitStr(&'a str),
-    Ident(&'a str),
-    EOF,
+    LitStr(String),
+    Ident(String),
 }
 
 impl<'a> Token<'a> {
-    pub fn new(span: LocatedSpan<'a>, value: TokenValue<'a>) -> Self {
+    pub fn new(span: LocatedSpan<'a>, value: TokenValue) -> Self {
         Token { span, value }
     }
 }
@@ -140,7 +139,7 @@ impl<'a> Slice<RangeFrom<usize>> for TokenSequence<'a> {
 impl<'a> Slice<RangeFull> for TokenSequence<'a> {
     fn slice(&self, _: RangeFull) -> Self {
         TokenSequence {
-            tokens: &self.tokens,
+            tokens: self.tokens,
             start: self.start,
             end: self.end,
         }
