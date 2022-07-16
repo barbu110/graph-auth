@@ -6,10 +6,10 @@ use nom::{InputIter, InputLength, InputTake, Needed, Slice};
 use serde_json::Number;
 
 use crate::resource_path::string::lexer_utils::LocatedSpan;
+use crate::resource_path::string::range_ex::AsRange;
 
 #[derive(Clone, Debug)]
-pub struct Token<'a> {
-    pub span: LocatedSpan<'a>,
+pub struct Token {
     pub value: TokenValue,
 }
 
@@ -31,20 +31,22 @@ pub enum TokenValue {
     Ident(String),
 }
 
-impl<'a> Token<'a> {
-    pub fn new(span: LocatedSpan<'a>, value: TokenValue) -> Self {
-        Token { span, value }
+impl Token {
+    pub fn new(value: TokenValue) -> Self {
+        Token {
+            value,
+        }
     }
 }
 
 pub struct TokenSequence<'a> {
-    tokens: &'a [Token<'a>],
+    tokens: &'a [Token],
     start: usize,
     end: usize,
 }
 
 impl<'a> Index<usize> for TokenSequence<'a> {
-    type Output = Token<'a>;
+    type Output = Token;
 
     fn index(&self, index: usize) -> &Self::Output {
         &self.tokens[index]
@@ -83,9 +85,9 @@ impl<'a> InputTake for TokenSequence<'a> {
 }
 
 impl<'a> InputIter for TokenSequence<'a> {
-    type Item = &'a Token<'a>;
-    type Iter = Enumerate<Iter<'a, Token<'a>>>;
-    type IterElem = Iter<'a, Token<'a>>;
+    type Item = &'a Token;
+    type Iter = Enumerate<Iter<'a, Token>>;
+    type IterElem = Iter<'a, Token>;
 
     fn iter_indices(&self) -> Self::Iter {
         self.tokens.iter().enumerate()
