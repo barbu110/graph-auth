@@ -11,6 +11,32 @@ use crate::resource_path::string::token::{Token, TokenValue};
 
 use super::range_ex::AsRange;
 
+/// Creates a parser function for a token that maps 1:1 with its token value.
+macro_rules! tag_token {
+    ($name:ident, $repr:literal, $token_value:expr) => {
+        fn $name(input: LocatedSpan) -> IResult<Token> {
+            map(tag($repr), |span: LocatedSpan| {
+                Token::new(span, $token_value)
+            })(input)
+        }
+    };
+}
+
+/// A representation of a string fragment used to construct a string literal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum StringFragment<'a> {
+    /// A string literal containing no quotes or backslashes.
+    Literal(LocatedSpan<'a>),
+
+    /// An escaped character fragment.
+    EscapedChar(char),
+
+    /// Whitespace ignored from the string's representation.
+    EscapedWhitespace,
+}
+
+/// Returns the value of the inner parser if it succeeds. Otherwise, a `LexerError`
+/// containing the provided error message is reported to the inner state of the lexer.
 fn expect<'a, F, E, T>(
     mut parser: F,
     err_msg: E,
@@ -33,6 +59,7 @@ where
     }
 }
 
+/// Parses an identifier.
 fn ident(input: LocatedSpan) -> IResult<Token> {
     let first = verify(anychar, |c| c.is_ascii_alphabetic() || *c == '_');
     let rest = take_while(|c: char| c.is_ascii_alphabetic() || c.is_ascii_digit() || c == '_');
@@ -41,13 +68,6 @@ fn ident(input: LocatedSpan) -> IResult<Token> {
         let fragment = span.fragment().to_string();
         Token::new(span, TokenValue::Ident(fragment))
     })(input)
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum StringFragment<'a> {
-    Literal(LocatedSpan<'a>),
-    EscapedChar(char),
-    EscapedWhitespace,
 }
 
 /// Parse a unicode sequence, of the form u{XXXX}, where XXXX is 1 to 6
@@ -101,6 +121,9 @@ fn lit_str_literal(input: LocatedSpan) -> IResult<LocatedSpan> {
     verify(not_quote_slash, |s: &LocatedSpan| !s.is_empty())(input)
 }
 
+/// Parses a single kind of string fragment as described by the `StringFragment
+/// enumeration. This can be a string literal without any quotes or backslashes,
+/// an escaped character, or ignored whitespace.
 fn lit_str_fragment(input: LocatedSpan) -> IResult<StringFragment> {
     alt((
         map(lit_str_literal, StringFragment::Literal),
@@ -112,6 +135,11 @@ fn lit_str_fragment(input: LocatedSpan) -> IResult<StringFragment> {
     ))(input)
 }
 
+/// Parses and constructs a string literal from its fragments.
+///
+/// # Notes
+///
+/// This function uses heap allocation to construct a `String`.
 fn lit_str(input: LocatedSpan) -> IResult<Token> {
     let build_string = fold_many0(lit_str_fragment, String::new, |mut string, fragment| {
         match fragment {
@@ -132,21 +160,12 @@ fn lit_str(input: LocatedSpan) -> IResult<Token> {
     Ok((remainder, Token::new(span, TokenValue::LitStr(s))))
 }
 
+/// Parses ASCII whitespace.
 fn whitespace(input: LocatedSpan) -> IResult<Token> {
     let ws = take_while1(|c: char| c.is_ascii_whitespace());
     map(ws, |span: LocatedSpan| {
         Token::new(span, TokenValue::Whitespace)
     })(input)
-}
-
-macro_rules! tag_token {
-    ($name:ident, $repr:literal, $token_value:expr) => {
-        fn $name(input: LocatedSpan) -> IResult<Token> {
-            map(tag($repr), |span: LocatedSpan| {
-                Token::new(span, $token_value)
-            })(input)
-        }
-    };
 }
 
 tag_token!(scope, "::", TokenValue::Scope);
@@ -169,6 +188,12 @@ fn expr(input: LocatedSpan) -> IResult<Vec<Token>> {
     Ok((remainder, token_list.unwrap_or_default()))
 }
 
+/// Takes a Resource Path string representation and returns a vector of tokens.
+///
+/// # Notes
+///
+/// Heap allocation will occur for two token types: identifiers and string
+/// literals.
 fn tokenize<'a>(raw: &'a str) -> (Vec<Token>, Vec<LexerError>) {
     let input = LocatedSpan::<'a>::new_extra(raw, LexerState::new());
     let (remainder, tokens) = expr(input).expect("parser cannot fail");
