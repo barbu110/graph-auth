@@ -1,8 +1,5 @@
-use std::iter::Enumerate;
-use std::ops::{Index, Range, RangeFrom, RangeFull, RangeTo};
-use std::slice::Iter;
+use std::ops::Range;
 
-use nom::{InputIter, InputLength, InputTake, Needed, Slice};
 use serde_json::Number;
 
 use crate::resource_path::string::lexer_utils::LocatedSpan;

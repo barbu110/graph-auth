@@ -1,27 +1,29 @@
-use std::cell::RefCell;
-
-use nom::{InputTake, Offset};
 use nom::branch::alt;
 use nom::bytes::complete::{is_not, tag, take_while, take_while1, take_while_m_n};
 use nom::character::complete::{anychar, char, multispace1};
 use nom::combinator::{all_consuming, map, map_opt, map_res, recognize, value, verify};
 use nom::multi::{fold_many0, many1};
 use nom::sequence::{delimited, preceded};
+use nom::{InputTake, Offset};
 
 use crate::resource_path::string::lexer_utils::{IResult, LexerError, LexerState, LocatedSpan};
 use crate::resource_path::string::token::{Token, TokenValue};
 
 use super::range_ex::AsRange;
 
-fn expect<'a, F, E, T>(mut parser: F, err_msg: E) -> impl FnMut(LocatedSpan<'a>) -> IResult<Option<T>>
-    where
-        F: FnMut(LocatedSpan<'a>) -> IResult<T>,
-        E: ToString
+fn expect<'a, F, E, T>(
+    mut parser: F,
+    err_msg: E,
+) -> impl FnMut(LocatedSpan<'a>) -> IResult<Option<T>>
+where
+    F: FnMut(LocatedSpan<'a>) -> IResult<T>,
+    E: ToString,
 {
     use nom::error::Error as NomError;
     move |input| match parser(input) {
         Ok((remaining, output)) => Ok((remaining, Some(output))),
-        Err(nom::Err::Error(NomError { input, code: _ })) | Err(nom::Err::Failure(NomError { input, code: _ })) => {
+        Err(nom::Err::Error(NomError { input, code: _ }))
+        | Err(nom::Err::Failure(NomError { input, code: _ })) => {
             let err = LexerError(input.as_range(), err_msg.to_string());
             input.extra.report_error(err);
 
@@ -61,14 +63,12 @@ fn lit_str_unicode_char(input: LocatedSpan) -> IResult<char> {
             expect(char('}'), "expected closing brace"),
         ),
     );
-    let parse_u32 = map_res(parse_delim_hex, move |hex| {
-        match hex {
-            None => Err("cannot parse number"),
-            Some(hex) => match u32::from_str_radix(hex.fragment(), 16) {
-                Ok(val) => Ok(val),
-                Err(_) => Err("invalid number"),
-            }
-        }
+    let parse_u32 = map_res(parse_delim_hex, move |hex| match hex {
+        None => Err("cannot parse number"),
+        Some(hex) => match u32::from_str_radix(hex.fragment(), 16) {
+            Ok(val) => Ok(val),
+            Err(_) => Err("invalid number"),
+        },
     });
     map_opt(parse_u32, std::char::from_u32)(input)
 }
@@ -105,23 +105,22 @@ fn lit_str_fragment(input: LocatedSpan) -> IResult<StringFragment> {
     alt((
         map(lit_str_literal, StringFragment::Literal),
         map(lit_str_escaped_char, StringFragment::EscapedChar),
-        value(StringFragment::EscapedWhitespace, lit_str_escaped_whitespace),
+        value(
+            StringFragment::EscapedWhitespace,
+            lit_str_escaped_whitespace,
+        ),
     ))(input)
 }
 
 fn lit_str(input: LocatedSpan) -> IResult<Token> {
-    let build_string = fold_many0(
-        lit_str_fragment,
-        String::new,
-        |mut string, fragment| {
-            match fragment {
-                StringFragment::Literal(s) => string.push_str(s.fragment()),
-                StringFragment::EscapedChar(c) => string.push(c),
-                StringFragment::EscapedWhitespace => {}
-            }
-            string
-        },
-    );
+    let build_string = fold_many0(lit_str_fragment, String::new, |mut string, fragment| {
+        match fragment {
+            StringFragment::Literal(s) => string.push_str(s.fragment()),
+            StringFragment::EscapedChar(c) => string.push(c),
+            StringFragment::EscapedWhitespace => {}
+        }
+        string
+    });
 
     let (remainder, s) = delimited(
         char('"'),
@@ -133,17 +132,19 @@ fn lit_str(input: LocatedSpan) -> IResult<Token> {
     Ok((remainder, Token::new(span, TokenValue::LitStr(s))))
 }
 
-
 fn whitespace(input: LocatedSpan) -> IResult<Token> {
     let ws = take_while1(|c: char| c.is_ascii_whitespace());
-    map(ws, |span: LocatedSpan| Token::new(span, TokenValue::Whitespace))(input)
+    map(ws, |span: LocatedSpan| {
+        Token::new(span, TokenValue::Whitespace)
+    })(input)
 }
-
 
 macro_rules! tag_token {
     ($name:ident, $repr:literal, $token_value:expr) => {
         fn $name(input: LocatedSpan) -> IResult<Token> {
-            map(tag($repr), |span: LocatedSpan| Token::new(span, $token_value))(input)
+            map(tag($repr), |span: LocatedSpan| {
+                Token::new(span, $token_value)
+            })(input)
         }
     };
 }
@@ -159,22 +160,13 @@ tag_token!(comma, ",", TokenValue::Comma);
 tag_token!(lit_false, "false", TokenValue::LitFalse);
 tag_token!(lit_true, "true", TokenValue::LitTrue);
 
-
 fn expr(input: LocatedSpan) -> IResult<Vec<Token>> {
     let tokens = many1(alt((
-        ident,
-        lit_str,
-        whitespace,
-        scope,
-        colon,
-        wildcard,
-        lcurly, rcurly,
-        lparen, rparen,
-        comma,
+        ident, lit_str, whitespace, scope, colon, wildcard, lcurly, rcurly, lparen, rparen, comma,
         lit_false, lit_true,
     )));
     let (remainder, token_list) = expect(all_consuming(tokens), "expected end-of-file")(input)?;
-    Ok((remainder, token_list.unwrap_or_else(|| Vec::new())))
+    Ok((remainder, token_list.unwrap_or_default()))
 }
 
 fn tokenize<'a>(raw: &'a str) -> (Vec<Token>, Vec<LexerError>) {
@@ -182,7 +174,6 @@ fn tokenize<'a>(raw: &'a str) -> (Vec<Token>, Vec<LexerError>) {
     let (remainder, tokens) = expr(input).expect("parser cannot fail");
     (tokens, remainder.extra.0.into_inner())
 }
-
 
 #[cfg(test)]
 mod test {

@@ -22,6 +22,12 @@ impl LexerState {
     }
 }
 
+impl Default for LexerState {
+    fn default() -> Self {
+        LexerState::new()
+    }
+}
+
 impl<'a> AsRange for LocatedSpan<'a> {
     fn as_range(&self) -> Range<usize> {
         let start = self.location_offset();
