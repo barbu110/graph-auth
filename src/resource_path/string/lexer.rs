@@ -63,8 +63,12 @@ where
 
 fn lit_bool(input: LocatedSpan) -> IResult<Token> {
     alt((
-        map(tag("false"), |span: LocatedSpan| Token::new(span, TokenValue::LitBool(false))),
-        map(tag("true"), |span: LocatedSpan| Token::new(span, TokenValue::LitBool(true))),
+        map(tag("false"), |span: LocatedSpan| {
+            Token::new(span, TokenValue::LitBool(false))
+        }),
+        map(tag("true"), |span: LocatedSpan| {
+            Token::new(span, TokenValue::LitBool(true))
+        }),
     ))(input)
 }
 
@@ -204,8 +208,8 @@ tag_token!(comma, ",", TokenValue::Comma);
 
 fn expr(input: LocatedSpan) -> IResult<Vec<Token>> {
     let tokens = many1(alt((
-        lit_bool, ident, lit_str, lit_num, whitespace, scope, colon, wildcard, lcurly, rcurly, lparen,
-        rparen, comma,
+        lit_bool, ident, lit_str, lit_num, whitespace, scope, colon, wildcard, lcurly, rcurly,
+        lparen, rparen, comma,
     )));
     let (remainder, token_list) = expect(all_consuming(tokens), "expected end-of-file")(input)?;
     Ok((remainder, token_list.unwrap_or_default()))
@@ -230,6 +234,7 @@ mod test {
     use rstest::rstest;
 
     use crate::resource_path::string::lexer::tokenize;
+    use crate::resource_path::string::lexer_utils::LexerError;
     use crate::resource_path::string::token::TokenValue;
 
     #[rstest]
@@ -253,11 +258,107 @@ mod test {
         assert_eq!(&actual.value, &tv);
     }
 
+    #[rstest]
+    #[case("\"\"", "")]
+    #[case("\"a\"", "a")]
+    #[case("\"a\"", "a")]
+    // String containing an escaped quote.
+    #[case("\"a\\\"\"", "a\"")]
+    // String containing an escaped newline.
+    #[case("\"a\\nb\"", "a\nb")]
+    #[case("\"\\u{61}bc\"", "abc")]
+    // String containing escaped whitespace.
+    #[case("\"a\\          \\nb\"", "a\nb")]
+    fn lit_str(#[case] raw: &str, #[case] expected: &str) {
+        let (tokens, errors) = tokenize(raw);
+        assert!(errors.is_empty());
+        assert_eq!(tokens.len(), 1);
+
+        let actual = tokens.first().unwrap();
+        assert_eq!(&actual.value, &TokenValue::LitStr(expected.to_string()));
+    }
+
+    #[test]
+    fn unclosed_str_lit() {
+        let (tokens, errors) = tokenize("\"abc");
+        assert_eq!(tokens.len(), 1);
+
+        let actual = tokens.first().unwrap();
+        assert_eq!(&actual.value, &TokenValue::LitStr("abc".to_string()));
+
+        let LexerError(err_range, err_msg) = errors.first().unwrap();
+        assert_eq!(err_range, &(4..4));
+        assert_eq!(err_msg, &"expected closing quote");
+    }
+
+    #[test]
+    fn invalid_unicode_escape() {
+        let (tokens, errors) = tokenize("\"\\u{61\"");
+        assert_eq!(tokens.len(), 1);
+
+        let actual = tokens.first().unwrap();
+        assert_eq!(&actual.value, &TokenValue::LitStr("a".to_string()));
+
+        let LexerError(err_range, err_msg) = errors.first().unwrap();
+        assert_eq!(err_range, &(6..7));
+        assert_eq!(err_msg, &"expected closing brace");
+    }
+
+    #[rstest]
+    #[case("123", true, true, false)]
+    #[case("-12", false, true, false)]
+    #[case("0.12", false, false, true)]
+    #[case("-0.1", false, false, true)]
+    // 2^65 - too large to fit in u64
+    #[case("36893488147419103232", false, false, true)]
+    // -2^65 - again, too large to fit in an i64
+    #[case("-36893488147419103232", false, false, true)]
+    fn lit_num(
+        #[case] raw: &str,
+        #[case] is_u64: bool,
+        #[case] is_i64: bool,
+        #[case] is_f64: bool,
+    ) {
+        let (tokens, errors) = tokenize(raw);
+        assert_eq!(tokens.len(), 1);
+        assert!(errors.is_empty());
+
+        let actual = tokens.first().unwrap();
+        match &actual.value {
+            TokenValue::LitNum(v) => {
+                assert_eq!(v.is_u64(), is_u64);
+                assert_eq!(v.is_i64(), is_i64);
+                assert_eq!(v.is_f64(), is_f64);
+            }
+            _ => panic!("token value must be a numeric literal"),
+        }
+    }
+
     #[test]
     fn simple() {
-        let raw = "account(id: \"123\")::{id, name}";
-        let (tokens, _) = tokenize(raw);
+        let (tokens, errors) = tokenize("a(b: true)::{c, d}");
+        assert!(errors.is_empty());
 
-        tokens.into_iter().map(|t| t.value).for_each(|t| println!("{:?}", t));
+        let token_values = [
+            TokenValue::Ident("a".to_string()),
+            TokenValue::LParen,
+            TokenValue::Ident("b".to_string()),
+            TokenValue::Colon,
+            TokenValue::Whitespace,
+            TokenValue::LitBool(true),
+            TokenValue::RParen,
+            TokenValue::Scope,
+            TokenValue::LCurly,
+            TokenValue::Ident("c".to_string()),
+            TokenValue::Comma,
+            TokenValue::Whitespace,
+            TokenValue::Ident("d".to_string()),
+            TokenValue::RCurly,
+        ];
+
+        assert_eq!(
+            tokens.into_iter().map(|t| t.value).collect::<Vec<_>>(),
+            token_values.to_vec(),
+        );
     }
 }
