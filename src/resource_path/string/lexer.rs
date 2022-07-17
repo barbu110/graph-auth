@@ -11,6 +11,7 @@ use serde_json::Number;
 use crate::resource_path::string::lexer_utils::{IResult, LexerError, LexerState, LocatedSpan};
 use crate::resource_path::string::token::{Token, TokenValue};
 
+
 use super::range_ex::AsRange;
 
 /// Creates a parser function for a token that maps 1:1 with its token value.

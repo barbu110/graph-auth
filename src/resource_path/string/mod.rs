@@ -5,3 +5,4 @@ pub mod lexer_utils;
 pub mod token;
 
 mod range_ex;
+mod token_sequence;
