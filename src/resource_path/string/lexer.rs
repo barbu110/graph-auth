@@ -1,10 +1,12 @@
+use nom::{InputTake, Offset};
 use nom::branch::alt;
 use nom::bytes::complete::{is_not, tag, take_while, take_while1, take_while_m_n};
 use nom::character::complete::{anychar, char, multispace1};
 use nom::combinator::{all_consuming, map, map_opt, map_res, recognize, value, verify};
 use nom::multi::{fold_many0, many1};
+use nom::number::complete::double;
 use nom::sequence::{delimited, preceded};
-use nom::{InputTake, Offset};
+use serde_json::Number;
 
 use crate::resource_path::string::lexer_utils::{IResult, LexerError, LexerState, LocatedSpan};
 use crate::resource_path::string::token::{Token, TokenValue};
@@ -57,6 +59,13 @@ where
         }
         Err(err) => Err(err),
     }
+}
+
+fn lit_bool(input: LocatedSpan) -> IResult<Token> {
+    alt((
+        map(tag("false"), |span: LocatedSpan| Token::new(span, TokenValue::LitBool(false))),
+        map(tag("true"), |span: LocatedSpan| Token::new(span, TokenValue::LitBool(true))),
+    ))(input)
 }
 
 /// Parses an identifier.
@@ -160,6 +169,22 @@ fn lit_str(input: LocatedSpan) -> IResult<Token> {
     Ok((remainder, Token::new(span, TokenValue::LitStr(s))))
 }
 
+/// Parses a numeric literal into either an `f64`, `u64`, or `i64`.
+fn lit_num(input: LocatedSpan) -> IResult<Token> {
+    let num = map_opt(double, |v: f64| {
+        let n = if v == (v as u64) as f64 {
+            Some(Number::from(v as u64))
+        } else if v < 0.0 && v == (v as i64) as f64 {
+            Some(Number::from(v as i64))
+        } else {
+            Number::from_f64(v)
+        };
+        n.map(TokenValue::LitNum)
+    });
+
+    map(num, |tv: TokenValue| Token::new(input.clone(), tv))(input.clone())
+}
+
 /// Parses ASCII whitespace.
 fn whitespace(input: LocatedSpan) -> IResult<Token> {
     let ws = take_while1(|c: char| c.is_ascii_whitespace());
@@ -176,13 +201,11 @@ tag_token!(rcurly, "}", TokenValue::RCurly);
 tag_token!(lparen, "(", TokenValue::LParen);
 tag_token!(rparen, ")", TokenValue::RParen);
 tag_token!(comma, ",", TokenValue::Comma);
-tag_token!(lit_false, "false", TokenValue::LitFalse);
-tag_token!(lit_true, "true", TokenValue::LitTrue);
 
 fn expr(input: LocatedSpan) -> IResult<Vec<Token>> {
     let tokens = many1(alt((
-        ident, lit_str, whitespace, scope, colon, wildcard, lcurly, rcurly, lparen, rparen, comma,
-        lit_false, lit_true,
+        lit_bool, ident, lit_str, lit_num, whitespace, scope, colon, wildcard, lcurly, rcurly, lparen,
+        rparen, comma,
     )));
     let (remainder, token_list) = expect(all_consuming(tokens), "expected end-of-file")(input)?;
     Ok((remainder, token_list.unwrap_or_default()))
@@ -202,12 +225,39 @@ fn tokenize<'a>(raw: &'a str) -> (Vec<Token>, Vec<LexerError>) {
 
 #[cfg(test)]
 mod test {
+    use std::ops::Range;
+
+    use rstest::rstest;
+
     use crate::resource_path::string::lexer::tokenize;
+    use crate::resource_path::string::token::TokenValue;
+
+    #[rstest]
+    #[case("::", 0..2, TokenValue::Scope)]
+    #[case("*", 0..1, TokenValue::Wildcard)]
+    #[case("{", 0..1, TokenValue::LCurly)]
+    #[case("}", 0..1, TokenValue::RCurly)]
+    #[case("(", 0..1, TokenValue::LParen)]
+    #[case(")", 0..1, TokenValue::RParen)]
+    #[case(",", 0..1, TokenValue::Comma)]
+    #[case(":", 0..1, TokenValue::Colon)]
+    #[case("false", 0..5, TokenValue::LitBool(false))]
+    #[case("true", 0..4, TokenValue::LitBool(true))]
+    fn tag_token(#[case] raw: &str, #[case] range: Range<usize>, #[case] tv: TokenValue) {
+        let (tokens, errors) = tokenize(raw);
+        assert!(errors.is_empty());
+        assert_eq!(tokens.len(), 1);
+
+        let actual = tokens.first().unwrap();
+        assert_eq!(actual.span.range, range, "wrong range for: {}", raw);
+        assert_eq!(&actual.value, &tv);
+    }
 
     #[test]
     fn simple() {
-        let raw = "\"abc";
-        let result = tokenize(raw);
-        println!("{:#?}", result);
+        let raw = "account(id: \"123\")::{id, name}";
+        let (tokens, _) = tokenize(raw);
+
+        tokens.into_iter().map(|t| t.value).for_each(|t| println!("{:?}", t));
     }
 }

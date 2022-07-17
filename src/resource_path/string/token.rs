@@ -17,7 +17,7 @@ pub struct Span<'a> {
     pub fragment: &'a str,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TokenValue {
     Whitespace,
     Scope,
@@ -28,8 +28,7 @@ pub enum TokenValue {
     RParen,
     Colon,
     Comma,
-    LitFalse,
-    LitTrue,
+    LitBool(bool),
     LitNum(Number),
     LitStr(String),
     Ident(String),
