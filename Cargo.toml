@@ -1,7 +1,11 @@
 [package]
 name = "graph-auth"
+description = "A collection of utilities to implement authorization on data graphs such as GraphQL."
+repository = "https://github.com/barbu110/graph-auth"
 version = "0.1.0"
+license = "MIT"
 edition = "2021"
+keywords = ["graphql", "auth"]
 
 [dependencies]
 nom = "7.1"
